@@ -6,6 +6,7 @@
 import io
 import os
 import os.path as osp
+from PIL import Image
 from types import SimpleNamespace
 from typing import Optional
 import pytz
@@ -87,7 +88,6 @@ from cvat.apps.iam.permissions import (CloudStoragePermission,
     TaskPermission, UserPermission)
 from cvat.apps.iam.filters import ORGANIZATION_OPEN_API_PARAMETERS
 from cvat.apps.engine.cache import MediaCache
-from cvat.apps.events.handlers import handle_annotations_patch
 from cvat.apps.engine.view_utils import tus_chunk_action
 
 
@@ -194,13 +194,13 @@ class ServerViewSet(viewsets.ViewSet):
         })
     @action(detail=False, methods=['GET'], url_path='plugins', serializer_class=PluginsSerializer)
     def plugins(request):
-        response = {
+        data = {
             'GIT_INTEGRATION': apps.is_installed('cvat.apps.dataset_repo'),
             'ANALYTICS': strtobool(os.environ.get("CVAT_ANALYTICS", '0')),
             'MODELS': strtobool(os.environ.get("CVAT_SERVERLESS", '0')),
             'PREDICT': False, # FIXME: it is unused anymore (for UI only)
         }
-        return Response(response)
+        return Response(PluginsSerializer(data).data)
 
 @extend_schema(tags=['projects'])
 @extend_schema_view(
@@ -1800,7 +1800,6 @@ class JobViewSet(viewsets.GenericViewSet, mixins.ListModelMixin, mixins.CreateMo
                     data = dm.task.patch_job_data(pk, serializer.data, action)
                 except (AttributeError, IntegrityError) as e:
                     return Response(data=str(e), status=status.HTTP_400_BAD_REQUEST)
-                handle_annotations_patch(instance=self._object, annotations=data, action=action)
                 return Response(data)
 
 
@@ -2722,9 +2721,16 @@ class AssetsViewSet(
         self.perform_create(serializer)
         path = os.path.join(settings.ASSETS_ROOT, str(serializer.instance.uuid))
         os.makedirs(path)
-        with open(os.path.join(path, file.name), 'wb+') as destination:
-            for chunk in file.chunks():
-                destination.write(chunk)
+        if file.content_type in ('image/jpeg', 'image/png'):
+            image = Image.open(file)
+            if any(map(lambda x: x > settings.ASSET_MAX_IMAGE_SIZE, image.size)):
+                scale_factor = settings.ASSET_MAX_IMAGE_SIZE / max(image.size)
+                image = image.resize((map(lambda x: int(x * scale_factor), image.size)))
+            image.save(os.path.join(path, file.name))
+        else:
+            with open(os.path.join(path, file.name), 'wb+') as destination:
+                for chunk in file.chunks():
+                    destination.write(chunk)
 
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
