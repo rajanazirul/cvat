@@ -81,8 +81,8 @@ function SignInLayout(props: SignInLayoutComponentProps): JSX.Element {
                 <Content>
                     <Row justify='center' align='middle' style={{ height: '100%' }}>
                         <Col {...titleSizes} className='cvat-signing-title'>
-                            <Title>Open Data</Title>
-                            <Title>Annotation Platform</Title>
+                            <Title>Asset Management</Title>
+                            <Title>With AI-Driven Processing</Title>
                         </Col>
                         {children}
                     </Row>
